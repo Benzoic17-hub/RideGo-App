@@ -3,25 +3,27 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://192.168.0.198:8000/api';
+  static const String baseUrl = 'http://192.168.0.199:8000/api';
 
   static Future<String?> getToken() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('token');
   }
 
-  static Future<Map<String, String>> _headers() async {
+  static Future<Map<String, String>> _headers({bool auth = true}) async {
     final token = await getToken();
+
+    // ADD THIS PRINT TO DEBUG
+    if (auth) print("Sending Request with Token: $token");
+
     return {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
+      if (auth && token != null) 'Authorization': 'Bearer $token',
     };
   }
 
-  // ══════════════════════════════════════════════════════════
   // AUTH
-  // ══════════════════════════════════════════════════════════
 
   static Future<Map<String, dynamic>> riderLogin(
       String email, String password) async {
@@ -29,10 +31,14 @@ class ApiService {
       final res = await http
           .post(
             Uri.parse('$baseUrl/rider/login'),
-            headers: await _headers(),
-            body: jsonEncode({'email': email, 'password': password}),
+            headers: await _headers(auth: false),
+            body: jsonEncode({
+              'email': email,
+              'password': password,
+            }),
           )
           .timeout(const Duration(seconds: 10));
+
       return jsonDecode(res.body);
     } catch (e) {
       return {
@@ -48,15 +54,16 @@ class ApiService {
       final res = await http
           .post(
             Uri.parse('$baseUrl/rider/register'),
-            headers: await _headers(),
+            headers: await _headers(auth: false),
             body: jsonEncode({
               'name': name,
               'email': email,
               'phone': phone,
-              'password': password
+              'password': password,
             }),
           )
           .timeout(const Duration(seconds: 10));
+
       return jsonDecode(res.body);
     } catch (e) {
       return {
@@ -72,10 +79,14 @@ class ApiService {
       final res = await http
           .post(
             Uri.parse('$baseUrl/driver/login'),
-            headers: await _headers(),
-            body: jsonEncode({'email': email, 'password': password}),
+            headers: await _headers(auth: false),
+            body: jsonEncode({
+              'email': email,
+              'password': password,
+            }),
           )
           .timeout(const Duration(seconds: 10));
+
       return jsonDecode(res.body);
     } catch (e) {
       return {
@@ -100,7 +111,7 @@ class ApiService {
       final res = await http
           .post(
             Uri.parse('$baseUrl/driver/register'),
-            headers: await _headers(),
+            headers: await _headers(auth: false),
             body: jsonEncode({
               'name': name,
               'email': email,
@@ -114,6 +125,7 @@ class ApiService {
             }),
           )
           .timeout(const Duration(seconds: 10));
+
       return jsonDecode(res.body);
     } catch (e) {
       return {
@@ -125,15 +137,17 @@ class ApiService {
 
   static Future<void> logout() async {
     try {
-      await http.post(Uri.parse('$baseUrl/logout'), headers: await _headers());
+      await http.post(
+        Uri.parse('$baseUrl/logout'),
+        headers: await _headers(),
+      );
     } catch (_) {}
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
   }
 
-  // ══════════════════════════════════════════════════════════
-  // RIDES — FIXED to match booking_screen.dart parameters
-  // ══════════════════════════════════════════════════════════
+  // RIDES
 
   static Future<Map<String, dynamic>> bookRide({
     required String pickupAddress,
@@ -164,6 +178,7 @@ class ApiService {
             }),
           )
           .timeout(const Duration(seconds: 10));
+
       return jsonDecode(res.body);
     } catch (e) {
       return {'success': false, 'message': 'Connection failed.'};
@@ -172,12 +187,16 @@ class ApiService {
 
   static Future<Map<String, dynamic>> getRideStatus(int rideId) async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('user_id') ?? '';
+
       final res = await http
           .get(
-            Uri.parse('$baseUrl/ride/$rideId/status'),
+            Uri.parse('$baseUrl/ride/$rideId/status?user_id=$userId'),
             headers: await _headers(),
           )
           .timeout(const Duration(seconds: 10));
+
       return jsonDecode(res.body);
     } catch (e) {
       return {'success': false};
@@ -186,15 +205,24 @@ class ApiService {
 
   static Future<Map<String, dynamic>> cancelRide(int rideId) async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('user_id') ?? '';
+
       final res = await http
           .post(
-            Uri.parse('$baseUrl/ride/$rideId/cancel'),
+            Uri.parse('$baseUrl/driver/ride/$rideId/cancel'),
             headers: await _headers(),
+            body: jsonEncode({
+              'user_id': userId,
+            }),
           )
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 15));
+
+      print('Cancel ride response: ${res.body}');
       return jsonDecode(res.body);
     } catch (e) {
-      return {'success': false};
+      print('Cancel ride error: $e');
+      return {'success': false, 'message': 'Connection failed: $e'};
     }
   }
 
@@ -206,6 +234,7 @@ class ApiService {
             headers: await _headers(),
           )
           .timeout(const Duration(seconds: 10));
+
       final data = jsonDecode(res.body);
       return data['rides'] ?? [];
     } catch (e) {
@@ -213,9 +242,7 @@ class ApiService {
     }
   }
 
-  // ══════════════════════════════════════════════════════════
   // DRIVER
-  // ══════════════════════════════════════════════════════════
 
   static Future<List<dynamic>> getAvailableRides() async {
     try {
@@ -225,6 +252,7 @@ class ApiService {
             headers: await _headers(),
           )
           .timeout(const Duration(seconds: 10));
+
       final data = jsonDecode(res.body);
       return data['rides'] ?? [];
     } catch (e) {
@@ -234,15 +262,72 @@ class ApiService {
 
   static Future<Map<String, dynamic>> acceptRide(int rideId) async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      // LOG 1: Check token
+      print('🔑 [ACCEPT RIDE] Token: $token');
+      print('🚗 [ACCEPT RIDE] Ride ID: $rideId');
+      print('🌐 [ACCEPT RIDE] URL: $baseUrl/driver/ride/$rideId/accept');
+
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      };
+
+      // LOG 2: Check headers
+      print('📤 [ACCEPT RIDE] Headers: $headers');
+
       final res = await http
           .post(
             Uri.parse('$baseUrl/driver/ride/$rideId/accept'),
-            headers: await _headers(),
+            headers: headers,
           )
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 15));
+
+      // LOG 3: Check response
+      print('📥 [ACCEPT RIDE] Status Code: ${res.statusCode}');
+      print('📥 [ACCEPT RIDE] Response: ${res.body}');
+
       return jsonDecode(res.body);
     } catch (e) {
-      return {'success': false};
+      print('❌ [ACCEPT RIDE] Exception: $e');
+      return {'success': false, 'message': 'Connection failed: $e'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> driverCancelRide(
+    int rideId,
+    String reason,
+  ) async {
+    try {
+      final token = await getToken();
+
+      print('❌ DRIVER CANCEL TOKEN: $token');
+      print('❌ DRIVER CANCEL RIDE ID: $rideId');
+
+      final res = await http
+          .post(
+            Uri.parse('$baseUrl/driver/ride/$rideId/cancel'),
+            headers: await _headers(),
+            body: jsonEncode({
+              'reason': reason,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      print('❌ DRIVER CANCEL STATUS: ${res.statusCode}');
+      print('❌ DRIVER CANCEL RESPONSE: ${res.body}');
+
+      return jsonDecode(res.body);
+    } catch (e) {
+      print('❌ DRIVER CANCEL ERROR: $e');
+
+      return {
+        'success': false,
+        'message': 'Connection failed: $e',
+      };
     }
   }
 
@@ -254,6 +339,7 @@ class ApiService {
             headers: await _headers(),
           )
           .timeout(const Duration(seconds: 10));
+
       return jsonDecode(res.body);
     } catch (e) {
       return {'success': false};
@@ -266,7 +352,10 @@ class ApiService {
           .post(
             Uri.parse('$baseUrl/driver/location'),
             headers: await _headers(),
-            body: jsonEncode({'lat': lat, 'lng': lng}),
+            body: jsonEncode({
+              'lat': lat,
+              'lng': lng,
+            }),
           )
           .timeout(const Duration(seconds: 5));
     } catch (_) {}
@@ -280,6 +369,7 @@ class ApiService {
             headers: await _headers(),
           )
           .timeout(const Duration(seconds: 10));
+
       return jsonDecode(res.body);
     } catch (e) {
       return {
@@ -299,6 +389,7 @@ class ApiService {
             headers: await _headers(),
           )
           .timeout(const Duration(seconds: 10));
+
       return jsonDecode(res.body);
     } catch (e) {
       return {'success': false, 'ride': null};

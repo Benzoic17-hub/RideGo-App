@@ -37,6 +37,7 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
       _email.text.trim(),
       _password.text,
     );
+    print(data);
 
     setState(() => _loading = false);
 
@@ -44,8 +45,11 @@ class _RiderLoginScreenState extends State<RiderLoginScreen> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('token', data['token']);
       await prefs.setString('user_type', 'rider');
+      await prefs.setString('user_id', data['user']['id'].toString());
       await prefs.setString('user_name', data['user']['name']);
+      await prefs.setString('user_email', data['user']['email'].toString());
       await prefs.setString('user_email', data['user']['email']);
+      await prefs.setString('user_phone', data['user']['phone'].toString());
       await prefs.setString('user_phone', data['user']['phone'] ?? '');
 
       if (mounted) {
